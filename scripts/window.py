@@ -4,7 +4,7 @@ import re
 from pyspark import SparkContext
 from pyspark.sql import SparkSession
 from pyspark.sql.types import IntegerType
-from pyspark.sql.functions import expr, substring, regexp_replace, col, count, size
+from pyspark.sql.functions import expr, substring, regexp_replace, col, count, size, to_date, date_format
 
 from pyspark.sql.window import Window
 
@@ -23,12 +23,17 @@ df_load = df_load.withColumn("code", df_load[-2])\
 	.withColumn("code_int", col("code").cast(IntegerType()))\
 	.withColumn("date", substring("_c3", 2 , 11))\
 	.withColumn("parsed_date", expr("to_date(date, 'dd/MMM/yyyy')"))\
+	.withColumn("pre_week",date_format(to_date("parsed_date", "dd/MMM/yyyy"), "w"))\
+	.withColumn("week", col("pre_week").cast(IntegerType()))\
 	.filter(col("code_int") > 399).filter(col("code_int") < 600)
 
-w = Window.orderBy(df_load.parsed_date.cast("timestamp").cast("long")).rangeBetween(-days(7), 0)
+#w = Window.partitionBy(col("week")).orderBy(df_load.parsed_date.cast("timestamp").cast("long")).rangeBetween(-days(7), 0)
+#w = Window.partitionBy(col("week")).orderBy(df_load.parsed_date.cast("timestamp").cast("long")).rangeBetween(-1, 0)
+w = Window.partitionBy(col("week")).orderBy(df_load.week).rangeBetween(-1, 0)
 df2 = df_load.withColumn("week_count", count("code_int").over(w))
+df2.dropDuplicates(['week']).sort(col("week")).show(100000)
 
 df2 = df2.repartition(1)
 df2.write.format("csv").mode("overwrite").save('hdfs://hadoop-hdfs:9000/data/window.csv')
 df_check = ss.read.format("csv").load('hdfs://hadoop-hdfs:9000/data/window.csv');
-df_check.show()
+#df_check.show()
